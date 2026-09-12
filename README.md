@@ -20,6 +20,35 @@ cp .env.example .env && docker compose up -d
 - 前端：`cd frontend && npm install && npm run dev`
 - 后端：进入 `backend` 后按技术栈运行开发命令，接口统一挂在 `/api`。
 
+## 靠泊计划冲突预检
+
+同一泊位的靠泊计划在保存或调整前会做时间重叠预检，冲突计划标出船名、泊位和重叠时间；存在冲突时计划保持 `CONFLICT` 且不能审批通过，无冲突才能 `APPROVED`。
+
+- `GET /api/berth-plan`：查看计划（原流程保留）
+- `POST /api/berth-plan`：新增计划，有冲突时强制落为 `CONFLICT`（原流程保留）
+- `POST /api/berth-plan/precheck`：保存前预检，返回 `has_conflict` 与冲突明细（船名、泊位代码、重叠起止时间）
+- `PUT /api/berth-plan/:id`：调整计划并重检；仍有冲突保持 `CONFLICT`，冲突消除自动回到 `DRAFT`
+- `POST /api/berth-plan/:id/approve`：审批；存在冲突返回 `409 BERTH_PLAN_CONFLICT` 并附冲突明细，无冲突置为 `APPROVED`
+
+前端 `/berths` 页面提供计划列表、新增表单、「冲突预检」按钮和「审批通过」按钮，冲突明细由 `ConflictBadge` 组件展示。
+
+验证示例（后端运行在 21106 端口）：
+
+```bash
+# 冲突：预检泊位 B1 上与种子计划重叠的窗口，返回船名/泊位/重叠时间
+curl -X POST http://localhost:21106/api/berth-plan/precheck \
+  -H 'Content-Type: application/json' \
+  -d '{"vessel_id":2,"berth_id":1,"planned_arrival":"2026-09-12T10:00:00+08:00","planned_departure":"2026-09-13T10:00:00+08:00"}'
+
+# 拒绝：审批与他人重叠的计划（如种子计划 4），返回 409 BERTH_PLAN_CONFLICT
+curl -X POST http://localhost:21106/api/berth-plan/4/approve
+
+# 放行：无冲突窗口新增即为 APPROVED，或先存 DRAFT 再 approve 返回 200
+curl -X POST http://localhost:21106/api/berth-plan \
+  -H 'Content-Type: application/json' \
+  -d '{"vessel_id":2,"berth_id":1,"planned_arrival":"2026-09-16T08:00:00+08:00","planned_departure":"2026-09-17T08:00:00+08:00","status":"APPROVED"}'
+```
+
 
 ## 技术栈
 
